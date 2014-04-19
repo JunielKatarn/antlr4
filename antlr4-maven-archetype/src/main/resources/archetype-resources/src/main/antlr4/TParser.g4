@@ -1,0 +1,3 @@
+parser grammar TParser;
+
+dummy : ;
