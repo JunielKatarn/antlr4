@@ -5,4 +5,4 @@
 //
 parser grammar Ruleb;
 
-b : ;
+b :  ' '+;

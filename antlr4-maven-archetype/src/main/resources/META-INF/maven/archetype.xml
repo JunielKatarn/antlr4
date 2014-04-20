@@ -3,7 +3,13 @@
 <archetype>
     <id>antlr4-maven-archetype</id>
     <sources>
+        <source>src\main\java\org\antlr\demo\AbstractTLexer.java</source>
+        <source>src\main\java\org\antlr\demo\AbstractTParser.java</source>
+        <source>src\main\java\org\antlr\demo\Main.java</source>
     </sources>
     <resources>
+        <resource>src\main\antlr4\imports\Ruleb.g</resource>
+        <resource>src\main\antlr4\TLexer.g4</resource>
+        <resource>src\main\antlr4\TParser.g4</resource>
     </resources>
 </archetype>

@@ -20,7 +20,7 @@
         <fileSet filtered="true" encoding="UTF-8">
             <directory>src/main/antlr4/imports</directory>
             <includes>
-                <include>**/*.g</include>
+                <include>**/*.g4</include>
             </includes>
         </fileSet>
     </fileSets>
