@@ -102,7 +102,7 @@
               but produce class files that are compatible with JRE 1.4. As
               Michael Caine might say, "Not a lot of people know that!"
               -->
-            <plugin>
+<!--            <plugin>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.1</version>
                 <configuration>
@@ -110,7 +110,7 @@
                     <target>jsr14</target>
                     <sourceDirectory>src</sourceDirectory>
                 </configuration>
-            </plugin>
+            </plugin>-->
 
             <plugin>
                 
