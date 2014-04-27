@@ -17,15 +17,15 @@ import org.antlr.v4.runtime.Lexer;
  */
 public abstract class AbstractTLexer extends Lexer {
 
-	/**
+    /**
      * Default constructor for the lexer, when you do not yet know what
      * the character stream to be provided is.
      */
     public AbstractTLexer() {
-		super();
-	}
-	
-	/**
+        super();
+    }
+
+    /**
      * Create a new instance of the lexer using the given character stream as
      * the input to lex into tokens.
      *

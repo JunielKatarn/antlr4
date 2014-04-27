@@ -17,7 +17,7 @@ import org.antlr.v4.runtime.TokenStream;
  * @author Julio C. Rocha (julio@rochsquadron.net)
  */
 public abstract class AbstractTParser extends Parser {
-	
+
     /**
      * Create a new parser instance, pre-supplying the input token stream.
      * 
@@ -26,8 +26,8 @@ public abstract class AbstractTParser extends Parser {
     protected AbstractTParser(TokenStream input) {
         super(input);
     }
-	
-	/**
+
+    /**
      * Creates the error/warning message that we need to show users/IDEs when
      * ANTLR has found a parsing error, has recovered from it and is now
      * telling us that a parsing exception occurred.
