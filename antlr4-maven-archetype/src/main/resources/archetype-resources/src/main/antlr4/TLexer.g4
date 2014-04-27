@@ -7,4 +7,8 @@
 
 lexer grammar TLexer;
 
+options {
+    superClass = AbstractTLexer;
+}
+
 DUMMY : '';
