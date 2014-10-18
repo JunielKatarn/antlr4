@@ -306,7 +306,7 @@ public class ParserATNFactory implements ATNFactory {
 	public Handle _ruleRef(@NotNull GrammarAST node) {
 		Rule r = g.getRule(node.getText());
 		if ( r==null ) {
-			g.tool.errMgr.toolError(ErrorType.INTERNAL_ERROR, "Rule "+node.getText()+" undefined");
+			g.tool.errMgr.grammarError(ErrorType.INTERNAL_ERROR, g.fileName, node.getToken(), "Rule "+node.getText()+" undefined");
 			return null;
 		}
 		RuleStartState start = atn.ruleToStartState[r.index];
@@ -557,7 +557,7 @@ public class ParserATNFactory implements ATNFactory {
 		blkStart.loopBackState = loop;
 		end.loopBackState = loop;
 
-		plusAST.atnState = blkStart;
+		plusAST.atnState = loop;
 		epsilon(blkEnd, loop);		// blk can see loop back
 
 		BlockAST blkAST = (BlockAST)plusAST.getChild(0);
@@ -769,8 +769,8 @@ public class ParserATNFactory implements ATNFactory {
 		for (Object alt : block.getChildren()) {
 			if ( !(alt instanceof AltAST) ) continue;
 			AltAST altAST = (AltAST)alt;
-			if ( altAST.getChildCount()==1 ) {
-				Tree e = altAST.getChild(0);
+			if ( altAST.getChildCount()==1 || (altAST.getChildCount() == 2 && altAST.getChild(0).getType() == ANTLRParser.ELEMENT_OPTIONS) ) {
+				Tree e = altAST.getChild(altAST.getChildCount() - 1);
 				if ( e.getType()==ANTLRParser.WILDCARD ) {
 					return true;
 				}

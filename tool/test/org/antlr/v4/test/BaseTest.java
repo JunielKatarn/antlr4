@@ -59,6 +59,7 @@ import org.antlr.v4.runtime.misc.Interval;
 import org.antlr.v4.runtime.misc.NotNull;
 import org.antlr.v4.runtime.misc.Nullable;
 import org.antlr.v4.runtime.misc.Pair;
+import org.antlr.v4.runtime.misc.Utils;
 import org.antlr.v4.runtime.tree.ParseTree;
 import org.antlr.v4.semantics.SemanticPipeline;
 import org.antlr.v4.tool.ANTLRMessage;
@@ -81,9 +82,7 @@ import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.ToolProvider;
 import java.io.BufferedReader;
-import java.io.BufferedWriter;
 import java.io.File;
-import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -122,7 +121,73 @@ public abstract class BaseTest {
 	public static final String newline = System.getProperty("line.separator");
 	public static final String pathSep = System.getProperty("path.separator");
 
+	/**
+	 * When the {@code antlr.testinprocess} runtime property is set to
+	 * {@code true}, the test suite will attempt to load generated classes into
+	 * the test process for direct execution rather than invoking the JVM in a
+	 * new process for testing.
+	 *
+	 * <p>
+	 * In-process testing results in a substantial performance improvement, but
+	 * some test environments created by IDEs do not support the mechanisms
+	 * currently used by the tests to dynamically load compiled code. Therefore,
+	 * the default behavior (used in all other cases) favors reliable
+	 * cross-system test execution by executing generated test code in a
+	 * separate process.</p>
+	 */
 	public static final boolean TEST_IN_SAME_PROCESS = Boolean.parseBoolean(System.getProperty("antlr.testinprocess"));
+
+	/**
+	 * When the {@code antlr.preserve-test-dir} runtime property is set to
+	 * {@code true}, the temporary directories created by the test run will not
+	 * be removed at the end of the test run, even for tests that completed
+	 * successfully.
+	 *
+	 * <p>
+	 * The default behavior (used in all other cases) is removing the temporary
+	 * directories for all tests which completed successfully, and preserving
+	 * the directories for tests which failed.</p>
+	 */
+	public static final boolean PRESERVE_TEST_DIR = Boolean.parseBoolean(System.getProperty("antlr.preserve-test-dir"));
+
+	/**
+	 * The base test directory is the directory where generated files get placed
+	 * during unit test execution.
+	 *
+	 * <p>
+	 * The default value for this property is the {@code java.io.tmpdir} system
+	 * property, and can be overridden by setting the
+	 * {@code antlr.java-test-dir} property to a custom location. Note that the
+	 * {@code antlr.java-test-dir} property directly affects the
+	 * {@link #CREATE_PER_TEST_DIRECTORIES} value as well.</p>
+	 */
+	public static final String BASE_TEST_DIR;
+
+	/**
+	 * When {@code true}, a temporary directory will be created for each test
+	 * executed during the test run.
+	 *
+	 * <p>
+	 * This value is {@code true} when the {@code antlr.java-test-dir} system
+	 * property is set, and otherwise {@code false}.</p>
+	 */
+	public static final boolean CREATE_PER_TEST_DIRECTORIES;
+
+	static {
+		String baseTestDir = System.getProperty("antlr.java-test-dir");
+		boolean perTestDirectories = false;
+		if (baseTestDir == null || baseTestDir.isEmpty()) {
+			baseTestDir = System.getProperty("java.io.tmpdir");
+			perTestDirectories = true;
+		}
+
+		if (!new File(baseTestDir).isDirectory()) {
+			throw new UnsupportedOperationException("The specified base test directory does not exist: " + baseTestDir);
+		}
+
+		BASE_TEST_DIR = baseTestDir;
+		CREATE_PER_TEST_DIRECTORIES = perTestDirectories;
+	}
 
     /**
      * Build up the full classpath we need, including the surefire path (if present)
@@ -142,17 +207,26 @@ public abstract class BaseTest {
 		@Override
 		protected void succeeded(Description description) {
 			// remove tmpdir if no error.
-			eraseTempDir();
+			if (!PRESERVE_TEST_DIR) {
+				eraseTempDir();
+			}
 		}
 
 	};
 
     @Before
 	public void setUp() throws Exception {
-        // new output dir for each test
-        tmpdir = new File(System.getProperty("java.io.tmpdir"),
-						  getClass().getSimpleName()+"-"+System.currentTimeMillis()).getAbsolutePath();
-//		tmpdir = "/tmp";
+		if (CREATE_PER_TEST_DIRECTORIES) {
+			// new output dir for each test
+			String testDirectory = getClass().getSimpleName() + "-" + System.currentTimeMillis();
+			tmpdir = new File(BASE_TEST_DIR, testDirectory).getAbsolutePath();
+		}
+		else {
+			tmpdir = new File(BASE_TEST_DIR).getAbsolutePath();
+			if (!PRESERVE_TEST_DIR && new File(tmpdir).exists()) {
+				eraseFiles();
+			}
+		}
     }
 
     protected org.antlr.v4.Tool newTool(String[] args) {
@@ -335,6 +409,33 @@ public abstract class BaseTest {
 		return null;
 	}
 
+	protected String load(String fileName, @Nullable String encoding)
+		throws IOException
+	{
+		if ( fileName==null ) {
+			return null;
+		}
+
+		String fullFileName = getClass().getPackage().getName().replace('.', '/') + '/' + fileName;
+		int size = 65000;
+		InputStreamReader isr;
+		InputStream fis = getClass().getClassLoader().getResourceAsStream(fullFileName);
+		if ( encoding!=null ) {
+			isr = new InputStreamReader(fis, encoding);
+		}
+		else {
+			isr = new InputStreamReader(fis);
+		}
+		try {
+			char[] data = new char[size];
+			int n = isr.read(data);
+			return new String(data, 0, n);
+		}
+		finally {
+			isr.close();
+		}
+	}
+
 	/** Wow! much faster than compiling outside of VM. Finicky though.
 	 *  Had rules called r and modulo. Wouldn't compile til I changed to 'a'.
 	 */
@@ -414,17 +515,21 @@ public abstract class BaseTest {
 		*/
 	}
 
-	/** Return true if all is ok, no errors */
-	protected ErrorQueue antlr(String fileName, String grammarFileName, String grammarStr, boolean defaultListener, String... extraOptions) {
-		System.out.println("dir "+tmpdir);
-		mkdir(tmpdir);
-		writeFile(tmpdir, fileName, grammarStr);
+	protected ErrorQueue antlr(String grammarFileName, boolean defaultListener, String... extraOptions) {
 		final List<String> options = new ArrayList<String>();
 		Collections.addAll(options, extraOptions);
-		options.add("-o");
-		options.add(tmpdir);
-		options.add("-lib");
-		options.add(tmpdir);
+		if ( !options.contains("-o") ) {
+			options.add("-o");
+			options.add(tmpdir);
+		}
+		if ( !options.contains("-lib") ) {
+			options.add("-lib");
+			options.add(tmpdir);
+		}
+		if ( !options.contains("-encoding") ) {
+			options.add("-encoding");
+			options.add("UTF-8");
+		}
 		options.add(new File(tmpdir,grammarFileName).toString());
 
 		final String[] optionsA = new String[options.size()];
@@ -444,7 +549,12 @@ public abstract class BaseTest {
 				System.err.println(msg);
 			}
 			System.out.println("!!!\ngrammar:");
-			System.out.println(grammarStr);
+			try {
+				System.out.println(new String(Utils.readFile(tmpdir+"/"+grammarFileName)));
+			}
+			catch (IOException ioe) {
+				System.err.println(ioe.toString());
+			}
 			System.out.println("###");
 		}
 		if ( !defaultListener && !equeue.warnings.isEmpty() ) {
@@ -456,6 +566,13 @@ public abstract class BaseTest {
 		}
 
 		return equeue;
+	}
+
+	protected ErrorQueue antlr(String grammarFileName, String grammarStr, boolean defaultListener, String... extraOptions) {
+		System.out.println("dir "+tmpdir);
+		mkdir(tmpdir);
+		writeFile(tmpdir, grammarFileName, grammarStr);
+		return antlr(grammarFileName, defaultListener, extraOptions);
 	}
 
 	protected String execLexer(String grammarFileName,
@@ -557,6 +674,18 @@ public abstract class BaseTest {
 								String startRuleName,
 								String input, boolean debug)
 	{
+		return execParser(grammarFileName, grammarStr, parserName,
+				   lexerName, startRuleName, input, debug, false);
+	}
+
+	protected String execParser(String grammarFileName,
+								String grammarStr,
+								String parserName,
+								String lexerName,
+								String startRuleName,
+								String input, boolean debug,
+								boolean profile)
+	{
 		boolean success = rawGenerateAndBuildRecognizer(grammarFileName,
 														grammarStr,
 														parserName,
@@ -567,7 +696,8 @@ public abstract class BaseTest {
 		return rawExecRecognizer(parserName,
 								 lexerName,
 								 startRuleName,
-								 debug);
+								 debug,
+								 profile);
 	}
 
 	/** Return true if all is well */
@@ -589,7 +719,7 @@ public abstract class BaseTest {
 													String... extraOptions)
 	{
 		ErrorQueue equeue =
-			antlr(grammarFileName, grammarFileName, grammarStr, defaultListener, extraOptions);
+			antlr(grammarFileName, grammarStr, defaultListener, extraOptions);
 		if (!equeue.errors.isEmpty()) {
 			return false;
 		}
@@ -615,7 +745,8 @@ public abstract class BaseTest {
 	protected String rawExecRecognizer(String parserName,
 									   String lexerName,
 									   String parserStartRuleName,
-									   boolean debug)
+									   boolean debug,
+									   boolean profile)
 	{
         this.stderrDuringParse = null;
 		if ( parserName==null ) {
@@ -625,7 +756,8 @@ public abstract class BaseTest {
 			writeTestFile(parserName,
 						  lexerName,
 						  parserStartRuleName,
-						  debug);
+						  debug,
+						  profile);
 		}
 
 		compile("Test.java");
@@ -744,7 +876,7 @@ public abstract class BaseTest {
 
 			String[] lines = input.split("\n");
 			String fileName = getFilenameFromFirstLineOfGrammar(lines[0]);
-			ErrorQueue equeue = antlr(fileName, fileName, input, false);
+			ErrorQueue equeue = antlr(fileName, input, false);
 
 			String actual = equeue.toString(true);
 			actual = actual.replace(tmpdir + File.separator, "");
@@ -814,14 +946,11 @@ public abstract class BaseTest {
 	}
 
 	void checkRuleATN(Grammar g, String ruleName, String expecting) {
-		ParserATNFactory f = new ParserATNFactory(g);
-		ATN atn = f.createATN();
-
 		DOTGenerator dot = new DOTGenerator(g);
-		System.out.println(dot.getDOT(atn.ruleToStartState[g.getRule(ruleName).index]));
+		System.out.println(dot.getDOT(g.atn.ruleToStartState[g.getRule(ruleName).index]));
 
 		Rule r = g.getRule(ruleName);
-		ATNState startState = atn.ruleToStartState[r.index];
+		ATNState startState = g.atn.ruleToStartState[r.index];
 		ATNPrinter serializer = new ATNPrinter(g, startState);
 		String result = serializer.asString();
 
@@ -982,12 +1111,7 @@ public abstract class BaseTest {
 
 	public static void writeFile(String dir, String fileName, String content) {
 		try {
-			File f = new File(dir, fileName);
-			FileWriter w = new FileWriter(f);
-			BufferedWriter bw = new BufferedWriter(w);
-			bw.write(content);
-			bw.close();
-			w.close();
+			Utils.writeFile(dir+"/"+fileName, content, "UTF-8");
 		}
 		catch (IOException ioe) {
 			System.err.println("can't write file");
@@ -1003,11 +1127,14 @@ public abstract class BaseTest {
 	protected void writeTestFile(String parserName,
 								 String lexerName,
 								 String parserStartRuleName,
-								 boolean debug)
+								 boolean debug,
+								 boolean profile)
 	{
 		ST outputFileST = new ST(
 			"import org.antlr.v4.runtime.*;\n" +
 			"import org.antlr.v4.runtime.tree.*;\n" +
+			"import org.antlr.v4.runtime.atn.*;\n" +
+			"import java.util.Arrays;\n"+
 			"\n" +
 			"public class Test {\n" +
 			"    public static void main(String[] args) throws Exception {\n" +
@@ -1016,7 +1143,9 @@ public abstract class BaseTest {
 			"        CommonTokenStream tokens = new CommonTokenStream(lex);\n" +
 			"        <createParser>\n"+
 			"		 parser.setBuildParseTree(true);\n" +
+			"		 <profile>\n"+
 			"        ParserRuleContext tree = parser.<parserStartRuleName>();\n" +
+			"		 <if(profile)>System.out.println(Arrays.toString(profiler.getDecisionInfo()));<endif>\n" +
 			"        ParseTreeWalker.DEFAULT.walk(new TreeShapeListener(), tree);\n" +
 			"    }\n" +
 			"\n" +
@@ -1043,6 +1172,14 @@ public abstract class BaseTest {
 				new ST(
 				"        <parserName> parser = new <parserName>(tokens);\n" +
                 "        parser.addErrorListener(new DiagnosticErrorListener());\n");
+		}
+		if ( profile ) {
+			outputFileST.add("profile",
+							 "ProfilingATNSimulator profiler = new ProfilingATNSimulator(parser);\n" +
+							 "parser.setInterpreter(profiler);");
+		}
+		else {
+			outputFileST.add("profile", new ArrayList<Object>());
 		}
 		outputFileST.add("createParser", createParserST);
 		outputFileST.add("parserName", parserName);
@@ -1073,7 +1210,8 @@ public abstract class BaseTest {
 
 	public void writeRecognizerAndCompile(String parserName, String lexerName,
 										  String parserStartRuleName,
-										  boolean debug) {
+										  boolean debug,
+										  boolean profile) {
 		if ( parserName==null ) {
 			writeLexerTestFile(lexerName, debug);
 		}
@@ -1081,7 +1219,8 @@ public abstract class BaseTest {
 			writeTestFile(parserName,
 						  lexerName,
 						  parserStartRuleName,
-						  debug);
+						  debug,
+						  profile);
 		}
 
 		compile("Test.java");
@@ -1205,7 +1344,7 @@ public abstract class BaseTest {
 
 		@Override
 		public String getSourceName() {
-			return null;
+			return UNKNOWN_SOURCE_NAME;
 		}
 
 		@Override

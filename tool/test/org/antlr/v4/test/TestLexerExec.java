@@ -224,7 +224,8 @@ public class TestLexerExec extends BaseTest {
 		assertNull(stderrDuringParse);
 	}
 
-	@Test public void testRecursiveLexerRuleRefWithWildcardStar() throws Exception {
+	@Test 
+	public void testRecursiveLexerRuleRefWithWildcardStar1() throws Exception {
 		String grammar =
 			"lexer grammar L;\n"+
 			"CMT : '/*' (CMT | .)*? '*/' ;\n" +
@@ -245,14 +246,24 @@ public class TestLexerExec extends BaseTest {
 						  "/* /*nested*/ */\n");
 		assertEquals(expecting, found);
 		assertNull(stderrDuringParse);
+	}
+	
+	@Test 
+	public void testRecursiveLexerRuleRefWithWildcardStar2() throws Exception {
+		String grammar =
+			"lexer grammar L;\n"+
+			"CMT : '/*' (CMT | .)*? '*/' ;\n" +
+			"WS : (' '|'\\n')+ ;\n"
+			/*+ "ANY : .;"*/;
+
 		// stuff on end of comment doesn't match another rule
-		expecting =
+		String expecting =
 			"[@0,0:8='/* ick */',<1>,1:0]\n" +
 			"[@1,10:10='\\n',<2>,1:10]\n" +
 			"[@2,11:36='/* /* */x\\n/* /*nested*/ */',<1>,2:0]\n" +
 			"[@3,38:38='\\n',<2>,3:17]\n" +
 			"[@4,39:38='<EOF>',<-1>,4:18]\n";
-		found = execLexer("L.g4", grammar, "L",
+		String found = execLexer("L.g4", grammar, "L",
 						  "/* ick */x\n" +
 						  "/* /* */x\n" +
 						  "/* /*nested*/ */x\n");
@@ -262,7 +273,8 @@ public class TestLexerExec extends BaseTest {
 			"line 3:16 token recognition error at: 'x'\n", stderrDuringParse);
 	}
 
-	@Test public void testRecursiveLexerRuleRefWithWildcardPlus() throws Exception {
+	@Test 
+	public void testRecursiveLexerRuleRefWithWildcardPlus1() throws Exception {
 		String grammar =
 			"lexer grammar L;\n"+
 			"CMT : '/*' (CMT | .)+? '*/' ;\n" +
@@ -283,14 +295,24 @@ public class TestLexerExec extends BaseTest {
 						  "/* /*nested*/ */\n");
 		assertEquals(expecting, found);
 		assertNull(stderrDuringParse);
+	}
+	
+	@Test 
+	public void testRecursiveLexerRuleRefWithWildcardPlus2() throws Exception {
+		String grammar =
+			"lexer grammar L;\n"+
+			"CMT : '/*' (CMT | .)+? '*/' ;\n" +
+			"WS : (' '|'\\n')+ ;\n"
+			/*+ "ANY : .;"*/;
+
 		// stuff on end of comment doesn't match another rule
-		expecting =
+		String expecting =
 			"[@0,0:8='/* ick */',<1>,1:0]\n" +
 			"[@1,10:10='\\n',<2>,1:10]\n" +
 			"[@2,11:36='/* /* */x\\n/* /*nested*/ */',<1>,2:0]\n" +
 			"[@3,38:38='\\n',<2>,3:17]\n" +
 			"[@4,39:38='<EOF>',<-1>,4:18]\n";
-		found = execLexer("L.g4", grammar, "L",
+		String found = execLexer("L.g4", grammar, "L",
 						  "/* ick */x\n" +
 						  "/* /* */x\n" +
 						  "/* /*nested*/ */x\n");
@@ -625,7 +647,7 @@ public class TestLexerExec extends BaseTest {
 		grammar.append("lexer grammar L;\n");
 		grammar.append("WS : [ \\t\\r\\n]+ -> skip;\n");
 		for (int i = 0; i < 4000; i++) {
-			grammar.append("KW").append(i).append(" : '").append("KW").append(i).append("';\n");
+			grammar.append("KW").append(i).append(" : 'KW' '").append(i).append("';\n");
 		}
 
 		String input = "KW400";
@@ -636,30 +658,33 @@ public class TestLexerExec extends BaseTest {
 		assertEquals(expecting, found);
 	}
 
-	protected String load(String fileName, @Nullable String encoding)
-		throws IOException
-	{
-		if ( fileName==null ) {
-			return null;
-		}
-
-		String fullFileName = getClass().getPackage().getName().replace('.', '/') + '/' + fileName;
-		int size = 65000;
-		InputStreamReader isr;
-		InputStream fis = getClass().getClassLoader().getResourceAsStream(fullFileName);
-		if ( encoding!=null ) {
-			isr = new InputStreamReader(fis, encoding);
-		}
-		else {
-			isr = new InputStreamReader(fis);
-		}
-		try {
-			char[] data = new char[size];
-			int n = isr.read(data);
-			return new String(data, 0, n);
-		}
-		finally {
-			isr.close();
-		}
+	/**
+	 * This is a regression test for antlr/antlr4#687 "Empty zero-length tokens
+	 * cannot have lexer commands" and antlr/antlr4#688 "Lexer cannot match
+	 * zero-length tokens"
+	 * https://github.com/antlr/antlr4/issues/687
+	 * https://github.com/antlr/antlr4/issues/688
+	 */
+	@Test public void testZeroLengthToken() throws Exception {
+		String grammar =
+			"lexer grammar L;\n"+
+			"\n" +
+			"BeginString\n" +
+			"	:	'\\'' -> more, pushMode(StringMode)\n" +
+			"	;\n" +
+			"\n" +
+			"mode StringMode;\n" +
+			"\n" +
+			"	StringMode_X : 'x' -> more;\n" +
+			"	StringMode_Done : -> more, mode(EndStringMode);\n" +
+			"\n" +
+			"mode EndStringMode;	\n" +
+			"\n" +
+			"	EndString : '\\'' -> popMode;\n";
+		String found = execLexer("L.g4", grammar, "L", "'xxx'");
+		String expecting =
+			"[@0,0:4=''xxx'',<1>,1:0]\n" +
+			"[@1,5:4='<EOF>',<-1>,1:5]\n";
+		assertEquals(expecting, found);
 	}
 }

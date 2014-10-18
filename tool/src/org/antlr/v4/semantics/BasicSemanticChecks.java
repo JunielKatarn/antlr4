@@ -47,6 +47,7 @@ import org.antlr.v4.tool.ast.GrammarAST;
 import org.antlr.v4.tool.ast.GrammarASTWithOptions;
 import org.antlr.v4.tool.ast.GrammarRootAST;
 import org.antlr.v4.tool.ast.RuleAST;
+import org.antlr.v4.tool.ast.RuleRefAST;
 import org.antlr.v4.tool.ast.TerminalAST;
 import org.stringtemplate.v4.misc.MultiMap;
 
@@ -128,6 +129,9 @@ public class BasicSemanticChecks extends GrammarTreeVisitor {
 		this.ruleCollector = ruleCollector;
 		this.errMgr = g.tool.errMgr;
 	}
+
+	@Override
+	public ErrorManager getErrorManager() { return errMgr; }
 
 	public void process() {	visitGrammar(g.ast); }
 
@@ -249,6 +253,21 @@ public class BasicSemanticChecks extends GrammarTreeVisitor {
 	@Override
 	public void defineToken(GrammarAST ID) {
 		checkTokenDefinition(ID.token);
+	}
+
+	@Override
+	protected void enterChannelsSpec(GrammarAST tree) {
+		if (g.isParser()) {
+			g.tool.errMgr.grammarError(ErrorType.CHANNELS_BLOCK_IN_PARSER_GRAMMAR, g.fileName, tree.token);
+		}
+		else if (g.isCombined()) {
+			g.tool.errMgr.grammarError(ErrorType.CHANNELS_BLOCK_IN_COMBINED_GRAMMAR, g.fileName, tree.token);
+		}
+	}
+
+	@Override
+	public void defineChannel(GrammarAST ID) {
+		checkChannelDefinition(ID.token);
 	}
 
 	@Override
@@ -375,8 +394,8 @@ public class BasicSemanticChecks extends GrammarTreeVisitor {
 	void checkInvalidRuleRef(Token ruleID) {
 		String fileName = ruleID.getInputStream().getSourceName();
 		if ( g.isLexer() && Character.isLowerCase(ruleID.getText().charAt(0)) ) {
-			g.tool.errMgr.grammarError(ErrorType.PARSER_RULES_NOT_ALLOWED,
-									   fileName, ruleID, ruleID.getText());
+			g.tool.errMgr.grammarError(ErrorType.PARSER_RULE_REF_IN_LEXER_RULE,
+									   fileName, ruleID, ruleID.getText(), currentRuleName);
 		}
 	}
 
@@ -388,6 +407,9 @@ public class BasicSemanticChecks extends GrammarTreeVisitor {
 									   tokenID,
 									   tokenID.getText());
 		}
+	}
+
+	void checkChannelDefinition(Token tokenID) {
 	}
 
 	@Override
@@ -528,6 +550,9 @@ public class BasicSemanticChecks extends GrammarTreeVisitor {
 			}
 		}
 
+		if ( elem instanceof RuleRefAST ) {
+			return checkRuleRefOptions((RuleRefAST)elem, ID, valueAST);
+		}
 		if ( elem instanceof TerminalAST ) {
 			return checkTokenOptions((TerminalAST)elem, ID, valueAST);
 		}
@@ -548,7 +573,7 @@ public class BasicSemanticChecks extends GrammarTreeVisitor {
 		return false;
 	}
 
-	boolean checkRuleRefOptions(TerminalAST elem, GrammarAST ID, GrammarAST valueAST) {
+	boolean checkRuleRefOptions(RuleRefAST elem, GrammarAST ID, GrammarAST valueAST) {
 		Token optionID = ID.token;
 		String fileName = optionID.getInputStream().getSourceName();
 		// don't care about id<SimpleValue> options

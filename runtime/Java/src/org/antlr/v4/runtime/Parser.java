@@ -34,7 +34,9 @@ import org.antlr.v4.runtime.atn.ATNDeserializationOptions;
 import org.antlr.v4.runtime.atn.ATNDeserializer;
 import org.antlr.v4.runtime.atn.ATNSimulator;
 import org.antlr.v4.runtime.atn.ATNState;
+import org.antlr.v4.runtime.atn.ParseInfo;
 import org.antlr.v4.runtime.atn.ParserATNSimulator;
+import org.antlr.v4.runtime.atn.ProfilingATNSimulator;
 import org.antlr.v4.runtime.atn.RuleTransition;
 import org.antlr.v4.runtime.dfa.DFA;
 import org.antlr.v4.runtime.misc.IntegerStack;
@@ -855,7 +857,7 @@ public abstract class Parser extends Recognizer<Token, ParserATNSimulator> {
 			List<String> s = new ArrayList<String>();
 			for (int d = 0; d < _interp.decisionToDFA.length; d++) {
 				DFA dfa = _interp.decisionToDFA[d];
-				s.add( dfa.toString(getTokenNames()) );
+				s.add( dfa.toString(getVocabulary()) );
 			}
 			return s;
 		}
@@ -870,7 +872,7 @@ public abstract class Parser extends Recognizer<Token, ParserATNSimulator> {
 				if ( !dfa.states.isEmpty() ) {
 					if ( seenOne ) System.out.println();
 					System.out.println("Decision " + dfa.decision + ":");
-					System.out.print(dfa.toString(getTokenNames()));
+					System.out.print(dfa.toString(getVocabulary()));
 					seenOne = true;
 				}
 			}
@@ -879,6 +881,30 @@ public abstract class Parser extends Recognizer<Token, ParserATNSimulator> {
 
 	public String getSourceName() {
 		return _input.getSourceName();
+	}
+
+	@Override
+	public ParseInfo getParseInfo() {
+		ParserATNSimulator interp = getInterpreter();
+		if (interp instanceof ProfilingATNSimulator) {
+			return new ParseInfo((ProfilingATNSimulator)interp);
+		}
+		return null;
+	}
+
+	/**
+	 * @since 4.3
+	 */
+	public void setProfile(boolean profile) {
+		ParserATNSimulator interp = getInterpreter();
+		if ( profile ) {
+			if (!(interp instanceof ProfilingATNSimulator)) {
+				setInterpreter(new ProfilingATNSimulator(this));
+			}
+		}
+		else if (interp instanceof ProfilingATNSimulator) {
+			setInterpreter(new ParserATNSimulator(this, getATN(), interp.decisionToDFA, interp.getSharedContextCache()));
+		}
 	}
 
 	/** During a parse is sometimes useful to listen in on the rule entry and exit
@@ -894,5 +920,15 @@ public abstract class Parser extends Recognizer<Token, ParserATNSimulator> {
 			else _tracer = new TraceListener();
 			addParseListener(_tracer);
 		}
+	}
+
+	/**
+	 * Gets whether a {@link TraceListener} is registered as a parse listener
+	 * for the parser.
+	 *
+	 * @see #setTrace(boolean)
+	 */
+	public boolean isTrace() {
+		return _tracer != null;
 	}
 }

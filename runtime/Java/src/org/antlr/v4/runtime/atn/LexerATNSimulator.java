@@ -157,6 +157,13 @@ public class LexerATNSimulator extends ATNSimulator {
 		mode = Lexer.DEFAULT_MODE;
 	}
 
+	@Override
+	public void clearDFA() {
+		for (int d = 0; d < decisionToDFA.length; d++) {
+			decisionToDFA[d] = new DFA(atn.getDecisionState(d), d);
+		}
+	}
+
 	protected int matchATN(@NotNull CharStream input) {
 		ATNState startState = atn.modeToStartState.get(mode);
 
@@ -188,6 +195,13 @@ public class LexerATNSimulator extends ATNSimulator {
 		//System.out.println("enter exec index "+input.index()+" from "+ds0.configs);
 		if ( debug ) {
 			System.out.format(Locale.getDefault(), "start state closure=%s\n", ds0.configs);
+		}
+
+		if (ds0.isAcceptState) {
+			// allow zero-length tokens
+			captureSimState(prevAccept, input, ds0);
+			// adjust index since the current input character was not yet consumed
+			prevAccept.index--;
 		}
 
 		int t = input.LA(1);

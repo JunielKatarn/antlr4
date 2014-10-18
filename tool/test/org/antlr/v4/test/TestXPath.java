@@ -42,10 +42,14 @@ public class TestXPath extends BaseTest {
 		"DIV :   '/' ;\n" +
 		"ADD :   '+' ;\n" +
 		"SUB :   '-' ;\n" +
+		"RETURN : 'return' ;\n" +
 		"ID  :   [a-zA-Z]+ ;      // match identifiers\n" +
 		"INT :   [0-9]+ ;         // match integers\n" +
 		"NEWLINE:'\\r'? '\\n' -> skip;     // return newlines to parser (is end-statement signal)\n" +
 		"WS  :   [ \\t]+ -> skip ; // toss out whitespace\n";
+	public static final String SAMPLE_PROGRAM =
+			"def f(x,y) { x = 3+4; y; ; }\n" +
+			"def g(x) { return 1+2*x; }\n";
 
 	@Test public void testValidPaths() throws Exception {
 		boolean ok =
@@ -53,9 +57,6 @@ public class TestXPath extends BaseTest {
 										  "ExprLexer", false);
 		assertTrue(ok);
 
-		String input =
-			"def f(x,y) { x = 3+4; y; ; }\n" +
-			"def g(x) { return 1+2*x; }\n";
 		String xpath[] = {
 			"/prog/func",		// all funcs under prog at root
 			"/prog/*",			// all children of prog at root
@@ -67,7 +68,8 @@ public class TestXPath extends BaseTest {
 			"//ID",				// any ID in tree
 			"//expr/primary/ID",// any ID child of a primary under any expr
 			"//body//ID",		// any ID under a body
-			"//'return'",		// any 'return' literal in tree
+			"//'return'",		// any 'return' literal in tree, matched by literal name
+			"//RETURN",			// any 'return' literal in tree, matched by symbolic name
 			"//primary/*",		// all kids of any primary
 			"//func/*/stat",	// all stat nodes grandkids of any func node
 			"/prog/func/'def'",	// all def literal kids of func kid of prog
@@ -90,6 +92,7 @@ public class TestXPath extends BaseTest {
 			"[y, x]",
 			"[x, y, x]",
 			"[return]",
+			"[return]",
 			"[3, 4, y, 1, 2, x]",
 			"[stat, stat, stat, stat]",
 			"[def, def]",
@@ -102,7 +105,7 @@ public class TestXPath extends BaseTest {
 		};
 
 		for (int i=0; i<xpath.length; i++) {
-			List<String> nodes = getNodeStrings(input, xpath[i], "prog", "ExprParser", "ExprLexer");
+			List<String> nodes = getNodeStrings(SAMPLE_PROGRAM, xpath[i], "prog", "ExprParser", "ExprLexer");
 			String result = nodes.toString();
 			assertEquals("path "+xpath[i]+" failed", expected[i], result);
 		}
@@ -114,13 +117,10 @@ public class TestXPath extends BaseTest {
 										  "ExprLexer", false);
 		assertTrue(ok);
 
-		String input =
-			"def f(x,y) { x = 3+4; y; ; }\n" +
-			"def g(x) { return 1+2*x; }\n";
 		String path = "&";
 		String expected = "Invalid tokens or characters at index 0 in path '&'";
 
-		testError(input, path, expected, "prog", "ExprParser", "ExprLexer");
+		testError(SAMPLE_PROGRAM, path, expected, "prog", "ExprParser", "ExprLexer");
 	}
 
 	@Test public void testWeirdChar2() throws Exception {
@@ -129,13 +129,10 @@ public class TestXPath extends BaseTest {
 										  "ExprLexer", false);
 		assertTrue(ok);
 
-		String input =
-			"def f(x,y) { x = 3+4; y; ; }\n" +
-			"def g(x) { return 1+2*x; }\n";
 		String path = "//w&e/";
 		String expected = "Invalid tokens or characters at index 3 in path '//w&e/'";
 
-		testError(input, path, expected, "prog", "ExprParser", "ExprLexer");
+		testError(SAMPLE_PROGRAM, path, expected, "prog", "ExprParser", "ExprLexer");
 	}
 
 	@Test public void testBadSyntax() throws Exception {
@@ -144,13 +141,10 @@ public class TestXPath extends BaseTest {
 										  "ExprLexer", false);
 		assertTrue(ok);
 
-		String input =
-			"def f(x,y) { x = 3+4; y; ; }\n" +
-			"def g(x) { return 1+2*x; }\n";
 		String path = "///";
 		String expected = "/ at index 2 isn't a valid rule name";
 
-		testError(input, path, expected, "prog", "ExprParser", "ExprLexer");
+		testError(SAMPLE_PROGRAM, path, expected, "prog", "ExprParser", "ExprLexer");
 	}
 
 	@Test public void testMissingWordAtEnd() throws Exception {
@@ -159,13 +153,10 @@ public class TestXPath extends BaseTest {
 										  "ExprLexer", false);
 		assertTrue(ok);
 
-		String input =
-			"def f(x,y) { x = 3+4; y; ; }\n" +
-			"def g(x) { return 1+2*x; }\n";
 		String path = "//";
 		String expected = "Missing path element at end of path";
 
-		testError(input, path, expected, "prog", "ExprParser", "ExprLexer");
+		testError(SAMPLE_PROGRAM, path, expected, "prog", "ExprParser", "ExprLexer");
 	}
 
 	@Test public void testBadTokenName() throws Exception {
@@ -174,13 +165,10 @@ public class TestXPath extends BaseTest {
 										  "ExprLexer", false);
 		assertTrue(ok);
 
-		String input =
-			"def f(x,y) { x = 3+4; y; ; }\n" +
-			"def g(x) { return 1+2*x; }\n";
 		String path = "//Ick";
 		String expected = "Ick at index 2 isn't a valid token name";
 
-		testError(input, path, expected, "prog", "ExprParser", "ExprLexer");
+		testError(SAMPLE_PROGRAM, path, expected, "prog", "ExprParser", "ExprLexer");
 	}
 
 	@Test public void testBadRuleName() throws Exception {
@@ -189,13 +177,10 @@ public class TestXPath extends BaseTest {
 										  "ExprLexer", false);
 		assertTrue(ok);
 
-		String input =
-			"def f(x,y) { x = 3+4; y; ; }\n" +
-			"def g(x) { return 1+2*x; }\n";
 		String path = "/prog/ick";
 		String expected = "ick at index 6 isn't a valid rule name";
 
-		testError(input, path, expected, "prog", "ExprParser", "ExprLexer");
+		testError(SAMPLE_PROGRAM, path, expected, "prog", "ExprParser", "ExprLexer");
 	}
 
 	protected void testError(String input, String path, String expected,

@@ -161,7 +161,7 @@ public class ATNConfigSet implements Set<ATNConfig> {
 		if ( config.semanticContext!=SemanticContext.NONE ) {
 			hasSemanticContext = true;
 		}
-		if (config.reachesIntoOuterContext > 0) {
+		if (config.getOuterContextDepth() > 0) {
 			dipsIntoOuterContext = true;
 		}
 		ATNConfig existing = configLookup.getOrAdd(config);
@@ -179,6 +179,12 @@ public class ATNConfigSet implements Set<ATNConfig> {
 		// cache at both places.
 		existing.reachesIntoOuterContext =
 			Math.max(existing.reachesIntoOuterContext, config.reachesIntoOuterContext);
+
+		// make sure to preserve the precedence filter suppression during the merge
+		if (config.isPrecedenceFilterSuppressed()) {
+			existing.setPrecedenceFilterSuppressed(true);
+		}
+
 		existing.context = merged; // replace context; no need to alt mapping
 		return true;
 	}
@@ -192,6 +198,23 @@ public class ATNConfigSet implements Set<ATNConfig> {
 			states.add(c.state);
 		}
 		return states;
+	}
+
+	/**
+	 * Gets the complete set of represented alternatives for the configuration
+	 * set.
+	 *
+	 * @return the set of represented alternatives in this configuration set
+	 *
+	 * @since 4.3
+	 */
+	@NotNull
+	public BitSet getAlts() {
+		BitSet alts = new BitSet();
+		for (ATNConfig config : configs) {
+			alts.set(config.alt);
+		}
+		return alts;
 	}
 
 	public List<SemanticContext> getPredicates() {

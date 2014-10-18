@@ -35,6 +35,7 @@ import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 
 /** */
 public class TestLeftRecursion extends BaseTest {
@@ -109,6 +110,23 @@ public class TestLeftRecursion extends BaseTest {
 		assertEquals(expecting, found);
 	}
 
+	@Test
+	public void testSemPredFailOption() throws Exception {
+		String grammar =
+			"grammar T;\n" +
+			"s @after {System.out.println($ctx.toStringTree(this));} : a ;\n" +
+			"a : a ID {false}?<fail='custom message'>\n" +
+			"  | ID" +
+			"  ;\n" +
+			"ID : 'a'..'z'+ ;\n" +
+			"WS : (' '|'\\n') -> skip ;\n";
+		String found = execParser("T.g4", grammar, "TParser", "TLexer",
+								  "s", "x y z", debug);
+		String expecting = "(s (a (a x) y z))\n";
+		assertEquals(expecting, found);
+		assertEquals("line 1:4 rule a custom message\n", stderrDuringParse);
+	}
+
 	@Test public void testTernaryExpr() throws Exception {
 		String grammar =
 			"grammar T;\n" +
@@ -135,6 +153,36 @@ public class TestLeftRecursion extends BaseTest {
 		runTests(grammar, tests, "s");
 	}
 
+	/**
+	 * This is a regression test for antlr/antlr4#542 "First alternative cannot
+	 * be right-associative".
+	 * https://github.com/antlr/antlr4/issues/542
+	 */
+	@Test public void testTernaryExprExplicitAssociativity() throws Exception {
+		String grammar =
+			"grammar T;\n" +
+			"s @after {System.out.println($ctx.toStringTree(this));} : e EOF ;\n" + // must indicate EOF can follow or 'a<EOF>' won't match
+			"e :<assoc=right> e '*' e" +
+			"  |<assoc=right> e '+' e" +
+			"  |<assoc=right> e '?' e ':' e" +
+			"  |<assoc=right> e '=' e" +
+			"  | ID" +
+			"  ;\n" +
+			"ID : 'a'..'z'+ ;\n" +
+			"WS : (' '|'\\n') -> skip ;\n";
+		String[] tests = {
+			"a",			"(s (e a) <EOF>)",
+			"a+b",			"(s (e (e a) + (e b)) <EOF>)",
+			"a*b",			"(s (e (e a) * (e b)) <EOF>)",
+			"a?b:c",		"(s (e (e a) ? (e b) : (e c)) <EOF>)",
+			"a=b=c",		"(s (e (e a) = (e (e b) = (e c))) <EOF>)",
+			"a?b+c:d",		"(s (e (e a) ? (e (e b) + (e c)) : (e d)) <EOF>)",
+			"a?b=c:d",		"(s (e (e a) ? (e (e b) = (e c)) : (e d)) <EOF>)",
+			"a? b?c:d : e",	"(s (e (e a) ? (e (e b) ? (e c) : (e d)) : (e e)) <EOF>)",
+			"a?b: c?d:e",	"(s (e (e a) ? (e b) : (e (e c) ? (e d) : (e e))) <EOF>)",
+		};
+		runTests(grammar, tests, "s");
+	}
 
 	@Test public void testExpressions() throws Exception {
 		String grammar =
@@ -294,6 +342,70 @@ public class TestLeftRecursion extends BaseTest {
 		runTests(grammar, tests, "s");
 	}
 
+	/**
+	 * This is a regression test for antlr/antlr4#677 "labels not working in
+	 * grammar file".
+	 * https://github.com/antlr/antlr4/issues/677
+	 *
+	 * <p>This test treats {@code ,} and {@code >>} as part of a single compound
+	 * operator (similar to a ternary operator).</p>
+	 */
+	@Test public void testReturnValueAndActionsList1() throws Exception {
+		String grammar =
+			"grammar T;\n" +
+			"s @after {System.out.println($ctx.toStringTree(this));} : expr EOF;\n" +
+			"expr:\n" +
+			"    a=expr '*' a=expr #Factor\n" +
+			"    | b+=expr (',' b+=expr)* '>>' c=expr #Send\n" +
+			"    | ID #JustId //semantic check on modifiers\n" +
+			";\n" +
+			"\n" +
+			"ID  : ('a'..'z'|'A'..'Z'|'_')\n" +
+			"      ('a'..'z'|'A'..'Z'|'0'..'9'|'_')*\n" +
+			";\n" +
+			"\n" +
+			"WS : [ \\t\\n]+ -> skip ;\n";
+		String[] tests = {
+			"a*b",			"(s (expr (expr a) * (expr b)) <EOF>)",
+			"a,c>>x",		"(s (expr (expr a) , (expr c) >> (expr x)) <EOF>)",
+			"x",			"(s (expr x) <EOF>)",
+			"a*b,c,x*y>>r",	"(s (expr (expr (expr a) * (expr b)) , (expr c) , (expr (expr x) * (expr y)) >> (expr r)) <EOF>)",
+		};
+		runTests(grammar, tests, "s");
+	}
+
+	/**
+	 * This is a regression test for antlr/antlr4#677 "labels not working in
+	 * grammar file".
+	 * https://github.com/antlr/antlr4/issues/677
+	 *
+	 * <p>This test treats the {@code ,} and {@code >>} operators separately.</p>
+	 */
+	@Test public void testReturnValueAndActionsList2() throws Exception {
+		String grammar =
+			"grammar T;\n" +
+			"s @after {System.out.println($ctx.toStringTree(this));} : expr EOF;\n" +
+			"expr:\n" +
+			"    a=expr '*' a=expr #Factor\n" +
+			"    | b+=expr ',' b+=expr #Comma\n" +
+			"    | b+=expr '>>' c=expr #Send\n" +
+			"    | ID #JustId //semantic check on modifiers\n" +
+			";\n" +
+			"\n" +
+			"ID  : ('a'..'z'|'A'..'Z'|'_')\n" +
+			"      ('a'..'z'|'A'..'Z'|'0'..'9'|'_')*\n" +
+			";\n" +
+			"\n" +
+			"WS : [ \\t\\n]+ -> skip ;\n";
+		String[] tests = {
+			"a*b",			"(s (expr (expr a) * (expr b)) <EOF>)",
+			"a,c>>x",		"(s (expr (expr (expr a) , (expr c)) >> (expr x)) <EOF>)",
+			"x",			"(s (expr x) <EOF>)",
+			"a*b,c,x*y>>r",	"(s (expr (expr (expr (expr (expr a) * (expr b)) , (expr c)) , (expr (expr x) * (expr y))) >> (expr r)) <EOF>)",
+		};
+		runTests(grammar, tests, "s");
+	}
+
 	@Test public void testLabelsOnOpSubrule() throws Exception {
 		String grammar =
 			"grammar T;\n" +
@@ -444,7 +556,7 @@ public class TestLeftRecursion extends BaseTest {
 			"ID : 'a'..'z'+ ;\n" +
 			"WS : (' '|'\\n') -> skip ;\n";
 		String expected =
-			"error(" + ErrorType.NO_NON_LR_ALTS.code + "): T.g4:3:0: left recursive rule 'a' must contain an alternative which is not left recursive\n";
+			"error(" + ErrorType.NO_NON_LR_ALTS.code + "): T.g4:3:0: left recursive rule a must contain an alternative which is not left recursive\n";
 		testErrors(new String[] { grammar, expected }, false);
 	}
 
@@ -458,7 +570,7 @@ public class TestLeftRecursion extends BaseTest {
 			"ID : 'a'..'z'+ ;\n" +
 			"WS : (' '|'\\n') -> skip ;\n";
 		String expected =
-			"error(" + ErrorType.EPSILON_LR_FOLLOW.code + "): T.g4:3:0: left recursive rule 'a' contains a left recursive alternative which can be followed by the empty string\n";
+			"error(" + ErrorType.EPSILON_LR_FOLLOW.code + "): T.g4:3:0: left recursive rule a contains a left recursive alternative which can be followed by the empty string\n";
 		testErrors(new String[] { grammar, expected }, false);
 	}
 
@@ -551,12 +663,61 @@ public class TestLeftRecursion extends BaseTest {
 		assertEquals("(prog (statement (letterA a)) (statement (letterA a)) <EOF>)\n", found);
 	}
 
+	/**
+	 * This is a regression test for antlr/antlr4#625 "Duplicate action breaks
+	 * operator precedence"
+	 * https://github.com/antlr/antlr4/issues/625
+	 */
+	@Test public void testMultipleActions() throws Exception {
+		String grammar =
+			"grammar T;\n" +
+			"s @after {System.out.println($ctx.toStringTree(this));} : e ;\n" +
+			"e : a=e op=('*'|'/') b=e  {}{}\n" +
+			"  | INT {}{}\n" +
+			"  | '(' x=e ')' {}{}\n" +
+			"  ;\n" +
+			"INT : '0'..'9'+ ;\n" +
+			"WS : (' '|'\\n') -> skip ;\n";
+		String[] tests = {
+			"4",		"(s (e 4))",
+		"1*2/3",		"(s (e (e (e 1) * (e 2)) / (e 3)))",
+		"(1/2)*3",		"(s (e (e ( (e (e 1) / (e 2)) )) * (e 3)))",
+		};
+		runTests(grammar, tests, "s");
+	}
+
+	/**
+	 * This is a regression test for antlr/antlr4#625 "Duplicate action breaks
+	 * operator precedence"
+	 * https://github.com/antlr/antlr4/issues/625
+	 */
+	@Test public void testMultipleActionsPredicatesOptions() throws Exception {
+		String grammar =
+			"grammar T;\n" +
+			"s @after {System.out.println($ctx.toStringTree(this));} : e ;\n" +
+			"e : a=e op=('*'|'/') b=e  {}{true}?\n" +
+			"  | a=e op=('+'|'-') b=e  {}<p=3>{true}?<fail='Message'>\n" +
+			"  | INT {}{}\n" +
+			"  | '(' x=e ')' {}{}\n" +
+			"  ;\n" +
+			"INT : '0'..'9'+ ;\n" +
+			"WS : (' '|'\\n') -> skip ;\n";
+		String[] tests = {
+			"4",		"(s (e 4))",
+		"1*2/3",		"(s (e (e (e 1) * (e 2)) / (e 3)))",
+		"(1/2)*3",		"(s (e (e ( (e (e 1) / (e 2)) )) * (e 3)))",
+		};
+		runTests(grammar, tests, "s");
+	}
+
 	public void runTests(String grammar, String[] tests, String startRule) {
-		rawGenerateAndBuildRecognizer("T.g4", grammar, "TParser", "TLexer");
+		boolean success = rawGenerateAndBuildRecognizer("T.g4", grammar, "TParser", "TLexer");
+		assertTrue(success);
 		writeRecognizerAndCompile("TParser",
 								  "TLexer",
 								  startRule,
-								  debug);
+								  debug,
+								  false);
 
 		for (int i=0; i<tests.length; i+=2) {
 			String test = tests[i];
